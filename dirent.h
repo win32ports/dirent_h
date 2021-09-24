@@ -36,6 +36,11 @@ extern "C" {
 #include <sys/types.h>
 
 #include <Windows.h>
+#include <Shlwapi.h>
+
+#ifdef _MSC_VER
+#pragma comment(lib, "Shlwapi.lib")
+#endif
 
 #ifndef NAME_MAX
 #define NAME_MAX 260
@@ -203,22 +208,22 @@ static DIR* __internal_opendir(wchar_t* wname, int size)
 	static char default_char = '?';
 	static wchar_t* prefix = L"\\\\?\\";
 	static wchar_t* suffix = L"\\*.*";
-	int extra_prefix = 4; /* use prefix "\\?\" to handle long file names */
+	static int extra_prefix = 4; /* use prefix "\\?\" to handle long file names */
 	static int extra_suffix = 4; /* use suffix "\*.*" to find everything */
 	WIN32_FIND_DATAW w32fd = { 0 };
 	HANDLE hFindFile = INVALID_HANDLE_VALUE;
 	static int grow_factor = 2;
 	char* buffer = NULL;
 
-	memcpy(wname + extra_prefix + size - 1, suffix, sizeof(wchar_t) * extra_prefix);
-	wname[size + extra_prefix + extra_suffix - 1] = 0;
+	BOOL relative = PathIsRelativeW(wname + extra_prefix);
 
-	if (memcmp(wname + extra_prefix, L"\\\\?\\", sizeof(wchar_t) * extra_prefix) == 0)
-	{
+	memcpy(wname + size - 1, suffix, sizeof(wchar_t) * extra_suffix);
+	wname[size + extra_suffix - 1] = 0;
+
+	if (relative) {
 		wname += extra_prefix;
-		extra_prefix = 0;
+		size -= extra_prefix;
 	}
-	
 	hFindFile = FindFirstFileW(wname, &w32fd);
 	if (INVALID_HANDLE_VALUE == hFindFile)
 	{
@@ -229,9 +234,9 @@ static DIR* __internal_opendir(wchar_t* wname, int size)
 	data = (struct __dir*) malloc(sizeof(struct __dir));
 	if (!data)
 		goto out_of_memory;
-	wname[extra_prefix + size - 1] = 0;
+	wname[size - 1] = 0;
 	data->fd = (int)CreateFileW(wname, 0, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
-	wname[extra_prefix + size - 1] = L'\\';
+	wname[size - 1] = L'\\';
 	data->count = 16;
 	data->index = 0;
 	data->entries = (struct dirent*) malloc(sizeof(struct dirent) * data->count);
@@ -244,7 +249,7 @@ static DIR* __internal_opendir(wchar_t* wname, int size)
 	{
 		WideCharToMultiByte(CP_UTF8, 0, w32fd.cFileName, -1, data->entries[data->index].d_name, NAME_MAX, &default_char, NULL);
 
-		memcpy(wname + extra_prefix + size, w32fd.cFileName, sizeof(wchar_t) * NAME_MAX);
+		memcpy(wname + size, w32fd.cFileName, sizeof(wchar_t) * NAME_MAX);
 
 		if (((w32fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == FILE_ATTRIBUTE_REPARSE_POINT) && __islink(wname, buffer))
 			data->entries[data->index].d_type = DT_LNK;
@@ -315,7 +320,7 @@ static DIR* opendir(const char* name)
 		free(wname);
 		return NULL;
 	}
-	dirp = __internal_opendir(wname, size);
+	dirp = __internal_opendir(wname, size + 4);
 	free(wname);
 	return dirp;
 }
@@ -337,7 +342,7 @@ static DIR* _wopendir(const wchar_t* name)
 		return NULL;
 	}
 	memcpy(wname + 4, name, sizeof(wchar_t) * (size + 1));
-	dirp = __internal_opendir(wname, size + 1);
+	dirp = __internal_opendir(wname, size + 5);
 	free(wname);
 	return dirp;
 }
@@ -352,14 +357,14 @@ static DIR* fdopendir(int fd)
 		errno = ENOMEM;
 		return NULL;
 	}
-	size = GetFinalPathNameByHandleW(fd, wname, NTFS_MAX_PATH, FILE_NAME_NORMALIZED);
+	size = GetFinalPathNameByHandleW(fd, wname + 4, NTFS_MAX_PATH, FILE_NAME_NORMALIZED);
 	if (0 == size)
 	{
 		free(wname);
 		errno = ENOTDIR;
 		return NULL;
 	}
-	dirp = __internal_opendir(wname, size + 1);
+	dirp = __internal_opendir(wname, size + 5);
 	free(wname);
 	return dirp;
 }
