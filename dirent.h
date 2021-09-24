@@ -34,6 +34,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 #include <sys/types.h>
+#include <errno.h>
 
 #include <Windows.h>
 #include <Shlwapi.h>
