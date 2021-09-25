@@ -109,6 +109,10 @@ extern "C" {
 #define FSCTL_GET_REPARSE_POINT 0x900a8
 #endif /* FSCTL_GET_REPARSE_POINT */
 
+#ifndef FILE_NAME_NORMALIZED
+#define FILE_NAME_NORMALIZED 0
+#endif /* FILE_NAME_NORMALIZED */
+
 typedef void* DIR;
 
 typedef struct ino_t
@@ -391,13 +395,30 @@ static DIR* fdopendir(intptr_t fd)
 {
 	DIR* dirp = NULL;
 	wchar_t* wname = __get_buffer();
+	typedef DWORD (__stdcall * pfnGetFinalPathNameByHandleW)(
+			HANDLE hFile, LPWSTR lpszFilePath, DWORD cchFilePath, DWORD dwFlags);
+
+	HANDLE hKernel32 = GetModuleHandleW(L"kernel32.dll");
+	if (!hKernel32)
+	{
+		errno = EINVAL;
+		return NULL;
+	}
+
+	pfnGetFinalPathNameByHandleW fnGetFinalPathNameByHandleW = (pfnGetFinalPathNameByHandleW) GetProcAddress(hKernel32, "GetFinalPathNameByHandleW");
+	if (!fnGetFinalPathNameByHandleW)
+	{
+		errno = EINVAL;
+		return NULL;
+	}
+
 	int size = 0;
 	if (!wname)
 	{
 		errno = ENOMEM;
 		return NULL;
 	}
-	size = GetFinalPathNameByHandleW((HANDLE) fd, wname + 4, NTFS_MAX_PATH, FILE_NAME_NORMALIZED);
+	size = fnGetFinalPathNameByHandleW((HANDLE) fd, wname + 4, NTFS_MAX_PATH, FILE_NAME_NORMALIZED);
 	if (0 == size)
 	{
 		free(wname);
