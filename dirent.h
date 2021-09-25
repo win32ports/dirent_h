@@ -124,7 +124,7 @@ struct dirent
 struct __dir
 {
 	struct dirent* entries;
-	int fd;
+	intptr_t fd;
 	long int count;
 	long int index;
 };
@@ -245,7 +245,7 @@ static DIR* __internal_opendir(wchar_t* wname, int size)
 	if (!data)
 		goto out_of_memory;
 	wname[size - 1] = 0;
-	data->fd = (int)CreateFileW(wname, 0, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
+	data->fd = (intptr_t)CreateFileW(wname, 0, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
 	wname[size - 1] = L'\\';
 	data->count = 16;
 	data->index = 0;
@@ -357,7 +357,7 @@ static DIR* _wopendir(const wchar_t* name)
 	return dirp;
 }
 
-static DIR* fdopendir(int fd)
+static DIR* fdopendir(intptr_t fd)
 {
 	DIR* dirp = NULL;
 	wchar_t* wname = __get_buffer();
@@ -367,7 +367,7 @@ static DIR* fdopendir(int fd)
 		errno = ENOMEM;
 		return NULL;
 	}
-	size = GetFinalPathNameByHandleW(fd, wname + 4, NTFS_MAX_PATH, FILE_NAME_NORMALIZED);
+	size = GetFinalPathNameByHandleW((HANDLE) fd, wname + 4, NTFS_MAX_PATH, FILE_NAME_NORMALIZED);
 	if (0 == size)
 	{
 		free(wname);
