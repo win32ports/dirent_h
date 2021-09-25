@@ -485,7 +485,7 @@ static long int telldir(DIR* dirp)
 	return ((struct __dir*)dirp)->count;
 }
 
-static int dirfd(DIR * dirp)
+static intptr_t dirfd(DIR * dirp)
 {
 	if (!dirp) {
 		errno = EINVAL;
