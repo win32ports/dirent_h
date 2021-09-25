@@ -34,9 +34,11 @@ extern "C" {
 #endif /* __cplusplus */
 
 #include <sys/types.h>
+#include <stdint.h>
 #include <errno.h>
 
 #include <Windows.h>
+
 #include <Shlwapi.h>
 
 #ifdef _MSC_VER
@@ -102,6 +104,10 @@ extern "C" {
 #ifndef NTFS_MAX_PATH
 #define NTFS_MAX_PATH 32768
 #endif /* NTFS_MAX_PATH */
+
+#ifndef FSCTL_GET_REPARSE_POINT
+#define FSCTL_GET_REPARSE_POINT CTL_CODE(FILE_DEVICE_FILE_SYSTEM,42,METHOD_BUFFERED,FILE_ANY_ACCESS)
+#endif /* FSCTL_GET_REPARSE_POINT */
 
 typedef void* DIR;
 
@@ -172,12 +178,22 @@ static int __islink(const wchar_t * name, char * buffer)
 	return ((REPARSE_GUID_DATA_BUFFER*)buffer)->ReparseTag == IO_REPARSE_TAG_SYMLINK;
 }
 
+#pragma pack(push, 1)
+
+typedef struct dirent_FILE_ID_128
+{
+	BYTE Identifier[16];
+}
+dirent_FILE_ID_128;
+
 typedef struct _dirent_FILE_ID_INFO
 {
 	ULONGLONG VolumeSerialNumber;
-	FILE_ID_128 FileId;
+	dirent_FILE_ID_128 FileId;
 }
 dirent_FILE_ID_INFO;
+
+#pragma pack(pop)
 
 enum { dirent_FileIdInfo = 18 };
 
@@ -187,11 +203,23 @@ static __ino_t __inode(const wchar_t* name)
 	BOOL result;
 	dirent_FILE_ID_INFO fileid;
 	BY_HANDLE_FILE_INFORMATION info;
+	typedef BOOL (__stdcall* pfnGetFileInformationByHandleEx)(HANDLE hFile,
+			FILE_INFO_BY_HANDLE_CLASS FileInformationClass,
+			LPVOID lpFileInformation, DWORD dwBufferSize);
+
+	HANDLE hKernel32 = GetModuleHandleW(L"kernel32.dll");
+	if (!hKernel32)
+		return value;
+
+	pfnGetFileInformationByHandleEx fnGetFileInformationByHandleEx = (pfnGetFileInformationByHandleEx) GetProcAddress(hKernel32, "GetFileInformationByHandleEx");
+	if (!fnGetFileInformationByHandleEx)
+		return value;
+
 	HANDLE hFile = CreateFileW(name, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, 0);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return value;
 
-	result = GetFileInformationByHandleEx(hFile, dirent_FileIdInfo, &fileid, sizeof(fileid));
+	result = fnGetFileInformationByHandleEx(hFile, dirent_FileIdInfo, &fileid, sizeof(fileid));
 	if (result)
 	{
 		value.serial = fileid.VolumeSerialNumber;
