@@ -172,17 +172,26 @@ static int __islink(const wchar_t * name, char * buffer)
 	return ((REPARSE_GUID_DATA_BUFFER*)buffer)->ReparseTag == IO_REPARSE_TAG_SYMLINK;
 }
 
+typedef struct _dirent_FILE_ID_INFO
+{
+	ULONGLONG VolumeSerialNumber;
+	FILE_ID_128 FileId;
+}
+dirent_FILE_ID_INFO;
+
+enum { dirent_FileIdInfo = 18 };
+
 static __ino_t __inode(const wchar_t* name)
 {
 	__ino_t value = { 0 };
 	BOOL result;
-	FILE_ID_INFO fileid;
+	dirent_FILE_ID_INFO fileid;
 	BY_HANDLE_FILE_INFORMATION info;
 	HANDLE hFile = CreateFileW(name, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, 0);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return value;
 
-	result = GetFileInformationByHandleEx(hFile, FileIdInfo, &fileid, sizeof(fileid));
+	result = GetFileInformationByHandleEx(hFile, dirent_FileIdInfo, &fileid, sizeof(fileid));
 	if (result)
 	{
 		value.serial = fileid.VolumeSerialNumber;
