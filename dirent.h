@@ -106,7 +106,7 @@ extern "C" {
 #endif /* NTFS_MAX_PATH */
 
 #ifndef FSCTL_GET_REPARSE_POINT
-#define FSCTL_GET_REPARSE_POINT CTL_CODE(FILE_DEVICE_FILE_SYSTEM,42,METHOD_BUFFERED,FILE_ANY_ACCESS)
+#define FSCTL_GET_REPARSE_POINT 0x900a8
 #endif /* FSCTL_GET_REPARSE_POINT */
 
 typedef void* DIR;
@@ -195,7 +195,9 @@ dirent_FILE_ID_INFO;
 
 #pragma pack(pop)
 
-enum { dirent_FileIdInfo = 18 };
+typedef enum dirent_FILE_INFO_BY_HANDLE_CLASS
+{ dirent_FileIdInfo = 18 }
+dirent_FILE_INFO_BY_HANDLE_CLASS;
 
 static __ino_t __inode(const wchar_t* name)
 {
@@ -204,7 +206,7 @@ static __ino_t __inode(const wchar_t* name)
 	dirent_FILE_ID_INFO fileid;
 	BY_HANDLE_FILE_INFORMATION info;
 	typedef BOOL (__stdcall* pfnGetFileInformationByHandleEx)(HANDLE hFile,
-			FILE_INFO_BY_HANDLE_CLASS FileInformationClass,
+			dirent_FILE_INFO_BY_HANDLE_CLASS FileInformationClass,
 			LPVOID lpFileInformation, DWORD dwBufferSize);
 
 	HANDLE hKernel32 = GetModuleHandleW(L"kernel32.dll");
