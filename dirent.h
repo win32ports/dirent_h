@@ -34,8 +34,16 @@ extern "C" {
 #endif /* __cplusplus */
 
 #include <sys/types.h>
+#include <stdint.h>
+#include <errno.h>
 
 #include <Windows.h>
+
+#include <Shlwapi.h>
+
+#ifdef _MSC_VER
+#pragma comment(lib, "Shlwapi.lib")
+#endif
 
 #ifndef NAME_MAX
 #define NAME_MAX 260
@@ -97,6 +105,14 @@ extern "C" {
 #define NTFS_MAX_PATH 32768
 #endif /* NTFS_MAX_PATH */
 
+#ifndef FSCTL_GET_REPARSE_POINT
+#define FSCTL_GET_REPARSE_POINT 0x900a8
+#endif /* FSCTL_GET_REPARSE_POINT */
+
+#ifndef FILE_NAME_NORMALIZED
+#define FILE_NAME_NORMALIZED 0
+#endif /* FILE_NAME_NORMALIZED */
+
 typedef void* DIR;
 
 typedef struct ino_t
@@ -118,7 +134,7 @@ struct dirent
 struct __dir
 {
 	struct dirent* entries;
-	int fd;
+	intptr_t fd;
 	long int count;
 	long int index;
 };
@@ -166,17 +182,50 @@ static int __islink(const wchar_t * name, char * buffer)
 	return ((REPARSE_GUID_DATA_BUFFER*)buffer)->ReparseTag == IO_REPARSE_TAG_SYMLINK;
 }
 
+#pragma pack(push, 1)
+
+typedef struct dirent_FILE_ID_128
+{
+	BYTE Identifier[16];
+}
+dirent_FILE_ID_128;
+
+typedef struct _dirent_FILE_ID_INFO
+{
+	ULONGLONG VolumeSerialNumber;
+	dirent_FILE_ID_128 FileId;
+}
+dirent_FILE_ID_INFO;
+
+#pragma pack(pop)
+
+typedef enum dirent_FILE_INFO_BY_HANDLE_CLASS
+{ dirent_FileIdInfo = 18 }
+dirent_FILE_INFO_BY_HANDLE_CLASS;
+
 static __ino_t __inode(const wchar_t* name)
 {
 	__ino_t value = { 0 };
 	BOOL result;
-	FILE_ID_INFO fileid;
+	dirent_FILE_ID_INFO fileid;
 	BY_HANDLE_FILE_INFORMATION info;
+	typedef BOOL (__stdcall* pfnGetFileInformationByHandleEx)(HANDLE hFile,
+			dirent_FILE_INFO_BY_HANDLE_CLASS FileInformationClass,
+			LPVOID lpFileInformation, DWORD dwBufferSize);
+
+	HANDLE hKernel32 = GetModuleHandleW(L"kernel32.dll");
+	if (!hKernel32)
+		return value;
+
+	pfnGetFileInformationByHandleEx fnGetFileInformationByHandleEx = (pfnGetFileInformationByHandleEx) GetProcAddress(hKernel32, "GetFileInformationByHandleEx");
+	if (!fnGetFileInformationByHandleEx)
+		return value;
+
 	HANDLE hFile = CreateFileW(name, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, 0);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return value;
 
-	result = GetFileInformationByHandleEx(hFile, FileIdInfo, &fileid, sizeof(fileid));
+	result = fnGetFileInformationByHandleEx(hFile, dirent_FileIdInfo, &fileid, sizeof(fileid));
 	if (result)
 	{
 		value.serial = fileid.VolumeSerialNumber;
@@ -203,22 +252,22 @@ static DIR* __internal_opendir(wchar_t* wname, int size)
 	static char default_char = '?';
 	static wchar_t* prefix = L"\\\\?\\";
 	static wchar_t* suffix = L"\\*.*";
-	int extra_prefix = 4; /* use prefix "\\?\" to handle long file names */
+	static int extra_prefix = 4; /* use prefix "\\?\" to handle long file names */
 	static int extra_suffix = 4; /* use suffix "\*.*" to find everything */
 	WIN32_FIND_DATAW w32fd = { 0 };
 	HANDLE hFindFile = INVALID_HANDLE_VALUE;
 	static int grow_factor = 2;
 	char* buffer = NULL;
 
-	memcpy(wname + extra_prefix + size - 1, suffix, sizeof(wchar_t) * extra_prefix);
-	wname[size + extra_prefix + extra_suffix - 1] = 0;
+	BOOL relative = PathIsRelativeW(wname + extra_prefix);
 
-	if (memcmp(wname + extra_prefix, L"\\\\?\\", sizeof(wchar_t) * extra_prefix) == 0)
-	{
+	memcpy(wname + size - 1, suffix, sizeof(wchar_t) * extra_suffix);
+	wname[size + extra_suffix - 1] = 0;
+
+	if (relative) {
 		wname += extra_prefix;
-		extra_prefix = 0;
+		size -= extra_prefix;
 	}
-	
 	hFindFile = FindFirstFileW(wname, &w32fd);
 	if (INVALID_HANDLE_VALUE == hFindFile)
 	{
@@ -229,9 +278,9 @@ static DIR* __internal_opendir(wchar_t* wname, int size)
 	data = (struct __dir*) malloc(sizeof(struct __dir));
 	if (!data)
 		goto out_of_memory;
-	wname[extra_prefix + size - 1] = 0;
-	data->fd = (int)CreateFileW(wname, 0, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
-	wname[extra_prefix + size - 1] = L'\\';
+	wname[size - 1] = 0;
+	data->fd = (intptr_t)CreateFileW(wname, 0, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
+	wname[size - 1] = L'\\';
 	data->count = 16;
 	data->index = 0;
 	data->entries = (struct dirent*) malloc(sizeof(struct dirent) * data->count);
@@ -244,7 +293,7 @@ static DIR* __internal_opendir(wchar_t* wname, int size)
 	{
 		WideCharToMultiByte(CP_UTF8, 0, w32fd.cFileName, -1, data->entries[data->index].d_name, NAME_MAX, &default_char, NULL);
 
-		memcpy(wname + extra_prefix + size, w32fd.cFileName, sizeof(wchar_t) * NAME_MAX);
+		memcpy(wname + size, w32fd.cFileName, sizeof(wchar_t) * NAME_MAX);
 
 		if (((w32fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == FILE_ATTRIBUTE_REPARSE_POINT) && __islink(wname, buffer))
 			data->entries[data->index].d_type = DT_LNK;
@@ -315,7 +364,7 @@ static DIR* opendir(const char* name)
 		free(wname);
 		return NULL;
 	}
-	dirp = __internal_opendir(wname, size);
+	dirp = __internal_opendir(wname, size + 4);
 	free(wname);
 	return dirp;
 }
@@ -337,29 +386,46 @@ static DIR* _wopendir(const wchar_t* name)
 		return NULL;
 	}
 	memcpy(wname + 4, name, sizeof(wchar_t) * (size + 1));
-	dirp = __internal_opendir(wname, size + 1);
+	dirp = __internal_opendir(wname, size + 5);
 	free(wname);
 	return dirp;
 }
 
-static DIR* fdopendir(int fd)
+static DIR* fdopendir(intptr_t fd)
 {
 	DIR* dirp = NULL;
 	wchar_t* wname = __get_buffer();
+	typedef DWORD (__stdcall * pfnGetFinalPathNameByHandleW)(
+			HANDLE hFile, LPWSTR lpszFilePath, DWORD cchFilePath, DWORD dwFlags);
+
+	HANDLE hKernel32 = GetModuleHandleW(L"kernel32.dll");
+	if (!hKernel32)
+	{
+		errno = EINVAL;
+		return NULL;
+	}
+
+	pfnGetFinalPathNameByHandleW fnGetFinalPathNameByHandleW = (pfnGetFinalPathNameByHandleW) GetProcAddress(hKernel32, "GetFinalPathNameByHandleW");
+	if (!fnGetFinalPathNameByHandleW)
+	{
+		errno = EINVAL;
+		return NULL;
+	}
+
 	int size = 0;
 	if (!wname)
 	{
 		errno = ENOMEM;
 		return NULL;
 	}
-	size = GetFinalPathNameByHandleW(fd, wname, NTFS_MAX_PATH, FILE_NAME_NORMALIZED);
+	size = fnGetFinalPathNameByHandleW((HANDLE) fd, wname + 4, NTFS_MAX_PATH, FILE_NAME_NORMALIZED);
 	if (0 == size)
 	{
 		free(wname);
 		errno = ENOTDIR;
 		return NULL;
 	}
-	dirp = __internal_opendir(wname, size + 1);
+	dirp = __internal_opendir(wname, size + 5);
 	free(wname);
 	return dirp;
 }
@@ -419,7 +485,7 @@ static long int telldir(DIR* dirp)
 	return ((struct __dir*)dirp)->count;
 }
 
-static int dirfd(DIR * dirp)
+static intptr_t dirfd(DIR * dirp)
 {
 	if (!dirp) {
 		errno = EINVAL;
