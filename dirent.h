@@ -554,7 +554,7 @@ static int scandir(const char* dirp, struct dirent*** namelist,
 	return index;
 }
 
-int alphasort(const void* a, const void* b)
+static int alphasort(const void* a, const void* b)
 {
 	struct dirent** dira = (struct dirent**)a, **dirb = (struct dirent**)b;
 	if (!dira || !dirb)
@@ -567,7 +567,7 @@ static int __strverscmp(const char* s1, const char* s2)
 	return alphasort(s1, s2);
 }
 
-int versionsort(const void* a, const void* b)
+static int versionsort(const void* a, const void* b)
 {
 	struct dirent** dira = (struct dirent**)a, ** dirb = (struct dirent**)b;
 	if (!dira || !dirb)
