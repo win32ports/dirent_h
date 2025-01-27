@@ -551,7 +551,7 @@ static int scandir(const char* dirp, struct dirent*** namelist,
 	if (namelist)
 		*namelist = entries;
 	closedir(d);
-	return 0;
+	return index;
 }
 
 int alphasort(const void* a, const void* b)
