@@ -37,9 +37,9 @@ extern "C" {
 #include <stdint.h>
 #include <errno.h>
 
-#include <Windows.h>
+#include <windows.h>
 
-#include <Shlwapi.h>
+#include <shlwapi.h>
 
 #ifdef _MSC_VER
 #pragma comment(lib, "Shlwapi.lib")
