@@ -37,9 +37,9 @@ extern "C" {
 #include <stdint.h>
 #include <errno.h>
 
-#include <Windows.h>
+#include <windows.h>
 
-#include <Shlwapi.h>
+#include <shlwapi.h>
 
 #ifdef _MSC_VER
 #pragma comment(lib, "Shlwapi.lib")
@@ -551,10 +551,10 @@ static int scandir(const char* dirp, struct dirent*** namelist,
 	if (namelist)
 		*namelist = entries;
 	closedir(d);
-	return 0;
+	return index;
 }
 
-int alphasort(const void* a, const void* b)
+static int alphasort(const void* a, const void* b)
 {
 	struct dirent** dira = (struct dirent**)a, **dirb = (struct dirent**)b;
 	if (!dira || !dirb)
@@ -567,7 +567,7 @@ static int __strverscmp(const char* s1, const char* s2)
 	return alphasort(s1, s2);
 }
 
-int versionsort(const void* a, const void* b)
+static int versionsort(const void* a, const void* b)
 {
 	struct dirent** dira = (struct dirent**)a, ** dirb = (struct dirent**)b;
 	if (!dira || !dirb)
